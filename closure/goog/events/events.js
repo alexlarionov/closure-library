@@ -159,6 +159,7 @@ goog.events.listenerCountEstimate_ = 0;
  * @param {T=} opt_handler Element in whose scope to call the listener.
  * @return {goog.events.Key} Unique key for the listener.
  * @template T,EVENTOBJ
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.listen = function(src, type, listener, opt_options, opt_handler) {
   'use strict';
@@ -207,6 +208,7 @@ goog.events.listen = function(src, type, listener, opt_options, opt_handler) {
  * @return {goog.events.ListenableKey} Unique key for the listener.
  * @template EVENTOBJ
  * @private
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.listen_ = function(
     src, type, listener, callOnce, opt_options, opt_handler) {
@@ -236,7 +238,9 @@ goog.events.listen_ = function(
   var proxy = goog.events.getProxy();
   listenerObj.proxy = proxy;
 
+  /** @suppress {strictMissingProperties} Added to tighten compiler checks */
   proxy.src = src;
+  /** @suppress {strictMissingProperties} Added to tighten compiler checks */
   proxy.listener = listenerObj;
 
   // Attach the proxy through the browser's API
@@ -277,23 +281,11 @@ goog.events.listen_ = function(
  */
 goog.events.getProxy = function() {
   'use strict';
-  var proxyCallbackFunction = goog.events.handleBrowserEvent_;
-  // Use a local var f to prevent one allocation.
-  var f =
-      goog.events.BrowserFeature.HAS_W3C_EVENT_SUPPORT ? function(eventObject) {
-        'use strict';
-        return proxyCallbackFunction.call(f.src, f.listener, eventObject);
-      } : function(eventObject) {
-        'use strict';
-        var v = proxyCallbackFunction.call(f.src, f.listener, eventObject);
-        // NOTE(chrishenry): In IE, we hack in a capture phase. However, if
-        // there is inline event handler which tries to prevent default (for
-        // example <a href="..." onclick="return false">...</a>) in a
-        // descendant element, the prevent default will be overridden
-        // by this listener if this listener were to return true. Hence, we
-        // return undefined.
-        if (!v) return v;
-      };
+  const proxyCallbackFunction = goog.events.handleBrowserEvent_;
+  /** @suppress {strictMissingProperties} Added to tighten compiler checks */
+  const f = function(eventObject) {
+    return proxyCallbackFunction.call(f.src, f.listener, eventObject);
+  };
   return f;
 };
 
@@ -322,6 +314,7 @@ goog.events.getProxy = function() {
  * @param {T=} opt_handler Element in whose scope to call the listener.
  * @return {goog.events.Key} Unique key for the listener.
  * @template T,EVENTOBJ
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.listenOnce = function(
     src, type, listener, opt_options, opt_handler) {
@@ -386,6 +379,7 @@ goog.events.listenWithWrapper = function(
  * @param {Object=} opt_handler Element in whose scope to call the listener.
  * @return {?boolean} indicating whether the listener was there to remove.
  * @template EVENTOBJ
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.unlisten = function(src, type, listener, opt_options, opt_handler) {
   'use strict';
@@ -433,6 +427,7 @@ goog.events.unlisten = function(src, type, listener, opt_options, opt_handler) {
  * @param {goog.events.Key} key The key returned by listen() for this
  *     event listener.
  * @return {boolean} indicating whether the listener was there to remove.
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.unlistenByKey = function(key) {
   'use strict';
@@ -453,6 +448,7 @@ goog.events.unlistenByKey = function(key) {
   }
 
   var type = listener.type;
+  /** @suppress {strictMissingProperties} Added to tighten compiler checks */
   var proxy = listener.proxy;
   if (src.removeEventListener) {
     src.removeEventListener(type, proxy, listener.capture);
@@ -594,6 +590,7 @@ goog.events.getListeners = function(obj, type, capture) {
  * @param {Object=} opt_handler Element in whose scope to call the listener.
  * @return {goog.events.ListenableKey} the found listener or null if not found.
  * @template EVENTOBJ
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.getListener = function(src, type, listener, opt_capt, opt_handler) {
   'use strict';
@@ -632,6 +629,7 @@ goog.events.getListener = function(src, type, listener, opt_capt, opt_handler) {
  *     listeners.
  * @return {boolean} Whether an event target has one or more listeners matching
  *     the requested type and/or capture phase.
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.hasListener = function(obj, opt_type, opt_capture) {
   'use strict';
@@ -745,6 +743,7 @@ goog.events.fireListeners_ = function(obj, type, capture, eventObject) {
  * @param {goog.events.Listener} listener The listener object to call.
  * @param {Object} eventObject The event object to pass to the listener.
  * @return {*} Result of listener.
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.fireListener = function(listener, eventObject) {
   'use strict';
@@ -827,61 +826,6 @@ goog.events.handleBrowserEvent_ = function(listener, opt_evt) {
   'use strict';
   if (listener.removed) {
     return true;
-  }
-
-  // Synthesize event propagation if the browser does not support W3C
-  // event model.
-  if (!goog.events.BrowserFeature.HAS_W3C_EVENT_SUPPORT) {
-    var ieEvent = opt_evt ||
-        /** @type {Event} */ (goog.getObjectByName('window.event'));
-    var evt = new goog.events.BrowserEvent(ieEvent, this);
-    /** @type {*} */
-    var retval = true;
-
-    if (goog.events.CAPTURE_SIMULATION_MODE ==
-        goog.events.CaptureSimulationMode.ON) {
-      // If we have not marked this event yet, we should perform capture
-      // simulation.
-      if (!goog.events.isMarkedIeEvent_(ieEvent)) {
-        goog.events.markIeEvent_(ieEvent);
-
-        var ancestors = [];
-        for (var parent = evt.currentTarget; parent;
-             parent = parent.parentNode) {
-          ancestors.push(parent);
-        }
-
-        // Fire capture listeners.
-        var type = listener.type;
-        for (var i = ancestors.length - 1;
-             !evt.hasPropagationStopped() && i >= 0; i--) {
-          evt.currentTarget = ancestors[i];
-          var result =
-              goog.events.fireListeners_(ancestors[i], type, true, evt);
-          retval = retval && result;
-        }
-
-        // Fire bubble listeners.
-        //
-        // We can technically rely on IE to perform bubble event
-        // propagation. However, it turns out that IE fires events in
-        // opposite order of attachEvent registration, which broke
-        // some code and tests that rely on the order. (While W3C DOM
-        // Level 2 Events TR leaves the event ordering unspecified,
-        // modern browsers and W3C DOM Level 3 Events Working Draft
-        // actually specify the order as the registration order.)
-        for (var i = 0; !evt.hasPropagationStopped() && i < ancestors.length;
-             i++) {
-          evt.currentTarget = ancestors[i];
-          var result =
-              goog.events.fireListeners_(ancestors[i], type, false, evt);
-          retval = retval && result;
-        }
-      }
-    } else {
-      retval = goog.events.fireListener(listener, evt);
-    }
-    return retval;
   }
 
   // Otherwise, simply fire the listener.
@@ -993,6 +937,7 @@ goog.events.LISTENER_WRAPPER_PROP_ =
  *     calls obj.handleEvent. If the same listener is passed to this
  *     function more than once, the same function is guaranteed to be
  *     returned.
+ * @suppress {strictMissingProperties} Added to tighten compiler checks
  */
 goog.events.wrapListener = function(listener) {
   'use strict';

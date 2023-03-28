@@ -13,12 +13,32 @@ goog.setTestOnly('goog.i18n.localeFeatureTest');
 const testSuite = goog.require('goog.testing.testSuite');
 
 testSuite({
-  testUseEcmaScript: function() {
-    assertTrue((typeof (LocaleFeature.USE_ECMASCRIPT_I18N) !== 'undefined'));
+  testUseEcmaScript2020: function() {
+    assertTrue(
+        (typeof (LocaleFeature.USE_ECMASCRIPT_I18N_2020) !== 'undefined'));
+  },
+
+  testUseEcmaScript2021: function() {
+    assertTrue(
+        (typeof (LocaleFeature.USE_ECMASCRIPT_I18N_2021) !== 'undefined'));
   },
 
   testRdtfFlag: function() {
     assertTrue(
         (typeof (LocaleFeature.USE_ECMASCRIPT_I18N_RDTF) !== 'undefined'));
+  },
+
+  testNumFormatFlag: function() {
+    assertTrue(
+        (typeof (LocaleFeature.USE_ECMASCRIPT_I18N_NUMFORMAT) !== 'undefined'));
+  },
+
+  testRdtfOptOutFlag: function() {
+    assertFalse(
+        (typeof (LocaleFeature.ECMASCRIPT_INTL_OPT_OUT) === 'undefined'));
+  },
+
+  testRdtfOptOutFlagSet: function() {
+    assertFalse(LocaleFeature.ECMASCRIPT_INTL_OPT_OUT);
   },
 });

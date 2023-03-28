@@ -15,6 +15,7 @@ goog.require('goog.Uri');
 goog.require('goog.array');
 goog.require('goog.asserts');
 goog.require('goog.async.run');
+goog.require('goog.collections.maps');
 goog.require('goog.json');
 goog.require('goog.labs.net.webChannel.Channel');
 goog.require('goog.labs.net.webChannel.ChannelRequest');
@@ -34,7 +35,6 @@ goog.require('goog.net.rpc.HttpCors');
 goog.require('goog.object');
 goog.require('goog.string');
 goog.require('goog.structs');
-goog.requireType('goog.structs.Map');
 
 goog.scope(function() {
 'use strict';
@@ -51,6 +51,12 @@ const netUtils = goog.labs.net.webChannel.netUtils;
 const requestStats = goog.labs.net.webChannel.requestStats;
 
 const httpCors = goog.module.get('goog.net.rpc.HttpCors');
+
+/**
+ * @define {boolean} If WebChannel should compile with Origin Trial features.
+ */
+const ALLOW_ORIGIN_TRIAL_FEATURES =
+    goog.define('goog.net.webChannel.ALLOW_ORIGIN_TRIAL_FEATURES', false);
 
 /**
  * Gets an internal channel parameter in a type-safe way.
@@ -268,10 +274,16 @@ goog.labs.net.webChannel.WebChannelBase = function(
   this.lastPostResponseArrayId_ = -1;
 
   /**
-   * The last status code received.
+   * The non-200 status code received that causes the channel to be aborted.
    * @private {number}
    */
-  this.lastStatusCode_ = -1;
+  this.errorResponseStatusCode_ = -1;
+
+  /**
+   * The response headers received along with the non-200 status.
+   * @private {!Object<string, string>|undefined}
+   */
+  this.errorResponseHeaders_ = undefined;
 
   /**
    * Number of times we have retried the current forward channel request.
@@ -403,6 +415,20 @@ goog.labs.net.webChannel.WebChannelBase = function(
   this.fastHandshake_ = (opt_options && opt_options.fastHandshake) || false;
 
   /**
+   * Whether to encode initMessageHeaders in the body.
+   *
+   * @private {boolean}
+   */
+  this.encodeInitMessageHeaders_ =
+      (opt_options && opt_options.encodeInitMessageHeaders) || false;
+
+  if (this.fastHandshake_ && this.encodeInitMessageHeaders_) {
+    this.channelDebug_.warning(
+        'Ignore encodeInitMessageHeaders because fastHandshake is set.');
+    this.encodeInitMessageHeaders_ = false;
+  }
+
+  /**
    * Whether to signal to the server to enable blocking handshake.
    *
    * @private {boolean}
@@ -466,10 +492,19 @@ goog.labs.net.webChannel.WebChannelBase = function(
 
   /***
    * Whether to attempt Chrome Origin Trials as part of the handshake.
-   * @private {boolean}
+   * @private @const {boolean}
    */
-  this.enableOriginTrials_ =
-      !opt_options || opt_options.enableOriginTrials !== false;
+  this.enableOriginTrials_ = ALLOW_ORIGIN_TRIAL_FEATURES &&
+      (!opt_options || opt_options.enableOriginTrials !== false);
+
+  /**
+   * The array of non-acked maps at the time of channel close. Refer to
+   * `getNonAckedMessagesWithClosedChannel()` API for definitions of non-acked
+   * messages.
+   *
+   * @private {?Array<!Wire.QueuedMap>}
+   */
+  this.nonAckedMapsAtChannelClose_ = null;
 };
 
 const WebChannelBase = goog.labs.net.webChannel.WebChannelBase;
@@ -714,7 +749,6 @@ WebChannelBase.prototype.disconnect = function() {
     uri.setParameterValue('RID', rid);
     uri.setParameterValue('TYPE', 'terminate');
 
-    // Add the reconnect parameters.
     this.addAdditionalParams_(uri);
 
     const request = ChannelRequest.createChannelRequest(
@@ -1052,7 +1086,7 @@ WebChannelBase.prototype.setAllowStreamingMode = function(allowStreamingMode) {
  * structure of key/value pairs. These maps are then encoded in a format
  * suitable for the wire and then reconstituted as a Map data structure that
  * the server can process.
- * @param {!Object|!goog.structs.Map} map The map to send.
+ * @param {!Object|!goog.collections.maps.MapLike} map The map to send.
  * @param {!Object=} opt_context The context associated with the map.
  */
 WebChannelBase.prototype.sendMap = function(map, opt_context) {
@@ -1177,12 +1211,22 @@ WebChannelBase.prototype.getState = function() {
 
 
 /**
- * Return the last status code received for a request.
- * @return {number} The last status code received for a request.
+ * @return {!Object<string, string>|undefined} The response headers received
+ * along with the non-200 status.
+ */
+WebChannelBase.prototype.getLastResponseHeaders = function() {
+  'use strict';
+  return this.errorResponseHeaders_;
+};
+
+
+/**
+ * @return {number} The non-200 status code received that causes the channel to
+ * be aborted.
  */
 WebChannelBase.prototype.getLastStatusCode = function() {
   'use strict';
-  return this.lastStatusCode_;
+  return this.errorResponseStatusCode_;
 };
 
 
@@ -1374,11 +1418,13 @@ WebChannelBase.prototype.open_ = function() {
     }
   }
 
-  if (this.httpHeadersOverwriteParam_ === null) {
+  if (this.httpHeadersOverwriteParam_ === null &&
+      !this.encodeInitMessageHeaders_) {
     request.setExtraHeaders(extraHeaders);
+    extraHeaders = null;
   }
 
-  const requestText = this.dequeueOutgoingMaps_(
+  let requestText = this.dequeueOutgoingMaps_(
       request,
       this.fastHandshake_ ? this.getMaxNumMessagesForFastHandshake_() :
                             WebChannelBase.MAX_MAPS_PER_REQUEST_);
@@ -1396,12 +1442,17 @@ WebChannelBase.prototype.open_ = function() {
         WebChannel.X_HTTP_SESSION_ID, this.getHttpSessionIdParam());
   }
 
-  // Add the reconnect parameters.
   this.addAdditionalParams_(uri);
 
-  if (this.httpHeadersOverwriteParam_ && extraHeaders) {
-    httpCors.setHttpHeadersWithOverwriteParam(
-        uri, this.httpHeadersOverwriteParam_, extraHeaders);
+  if (extraHeaders) {
+    if (this.encodeInitMessageHeaders_) {
+      let encodedHeaders =
+          httpCors.generateEncodedHttpHeadersOverwriteParam(extraHeaders);
+      requestText = 'headers=' + encodedHeaders + '&' + requestText;
+    } else if (this.httpHeadersOverwriteParam_) {
+      httpCors.setHttpHeadersWithOverwriteParam(
+          uri, this.httpHeadersOverwriteParam_, extraHeaders);
+    }  // else - should not happen
   }
 
   this.forwardChannelRequestPool_.addRequest(request);
@@ -1476,7 +1527,7 @@ WebChannelBase.prototype.makeForwardChannelRequest_ = function(
   uri.setParameterValue('SID', this.sid_);
   uri.setParameterValue('RID', rid);
   uri.setParameterValue('AID', this.lastArrayId_);
-  // Add the additional reconnect parameters.
+
   this.addAdditionalParams_(uri);
 
   if (this.httpHeadersOverwriteParam_ && this.extraHeaders_) {
@@ -1510,13 +1561,20 @@ WebChannelBase.prototype.makeForwardChannelRequest_ = function(
 
 
 /**
- * Adds the additional parameters from the handler to the given URI.
+ * Adds additional query parameters from `extraParams_` and `handler_` to the
+ * given URI.
  * @param {!goog.Uri} uri The URI to add the parameters to.
  * @private
  */
 WebChannelBase.prototype.addAdditionalParams_ = function(uri) {
   'use strict';
-  // Add the additional reconnect parameters as needed.
+  if (this.extraParams_) {
+    goog.object.forEach(this.extraParams_, function(value, key) {
+      'use strict';
+      uri.setParameterValue(key, value);
+    });
+  }
+
   if (this.handler_) {
     const params = this.handler_.getAdditionalParams(this);
     if (params) {
@@ -1736,11 +1794,9 @@ WebChannelBase.prototype.startBackChannel_ = function() {
   uri.setParameterValue('SID', this.sid_);
   uri.setParameterValue('CI', this.enableStreaming_ ? '0' : '1');
   uri.setParameterValue('AID', this.lastArrayId_);
-
-  // Add the reconnect parameters.
-  this.addAdditionalParams_(uri);
-
   uri.setParameterValue('TYPE', 'xmlhttp');
+
+  this.addAdditionalParams_(uri);
 
   if (this.httpHeadersOverwriteParam_ && this.extraHeaders_) {
     httpCors.setHttpHeadersWithOverwriteParam(
@@ -1811,7 +1867,6 @@ WebChannelBase.prototype.onRequestData = function(request, responseText) {
     // either CLOSED or a request we don't know about (perhaps an old request)
     return;
   }
-  this.lastStatusCode_ = request.getLastStatusCode();
 
   // first to check if request has been upgraded to backchannel
   if (!request.isInitialResponseDecoded() &&
@@ -1908,6 +1963,7 @@ WebChannelBase.prototype.handlePostResponse_ = function(
  * @param {!ChannelRequest} forwardReq The forward channel request that
  * triggers this function call.
  * @private
+ * @suppress {strictPrimitiveOperators}
  */
 WebChannelBase.prototype.handleBackchannelMissing_ = function(forwardReq) {
   'use strict';
@@ -2021,6 +2077,7 @@ WebChannelBase.isFatalError_ = function(error, statusCode) {
 
 /**
  * @override
+ * @suppress {strictPrimitiveOperators}
  */
 WebChannelBase.prototype.onRequestComplete = function(request) {
   'use strict';
@@ -2041,8 +2098,6 @@ WebChannelBase.prototype.onRequestComplete = function(request) {
     return;
   }
 
-  this.lastStatusCode_ = request.getLastStatusCode();
-
   if (this.state_ == WebChannelBase.State.CLOSED) {
     return;
   }
@@ -2062,14 +2117,16 @@ WebChannelBase.prototype.onRequestComplete = function(request) {
   }
   // Else unsuccessful. Fall through.
 
+  const lastStatusCode = request.getLastStatusCode();
   const lastError = request.getLastError();
-  if (!WebChannelBase.isFatalError_(lastError, this.lastStatusCode_)) {
+  if (!WebChannelBase.isFatalError_(lastError, lastStatusCode)) {
     // Maybe retry.
     const self = this;
     this.channelDebug_.debug(function() {
       'use strict';
       return 'Maybe retrying, last error: ' +
-          ChannelRequest.errorStringFromCode(lastError, self.lastStatusCode_);
+          ChannelRequest.errorStringFromCode(
+              lastError, self.errorResponseStatusCode_);
     });
     if (type == WebChannelBase.ChannelType_.FORWARD_CHANNEL) {
       if (this.maybeRetryForwardChannel_(request)) {
@@ -2086,8 +2143,12 @@ WebChannelBase.prototype.onRequestComplete = function(request) {
   } else {
     // Else fatal error. Fall through and mark the pending maps as failed.
     this.channelDebug_.debug('Not retrying due to error type');
-  }
 
+    if (lastStatusCode > 200) {
+      this.errorResponseStatusCode_ = request.getLastStatusCode();
+      this.errorResponseHeaders_ = request.getErrorResponseHeaders();
+    }
+  }
 
   // Abort the channel now
 
@@ -2186,6 +2247,7 @@ WebChannelBase.prototype.applyControlHeaders_ = function(request) {
  *     by the server.
  * @param {!ChannelRequest} request The underlying request object
  * @private
+ * @suppress {strictPrimitiveOperators}
  */
 WebChannelBase.prototype.onInput_ = function(respArray, request) {
   'use strict';
@@ -2394,7 +2456,7 @@ WebChannelBase.prototype.onError_ = function(error) {
 WebChannelBase.prototype.onClose_ = function() {
   'use strict';
   this.state_ = WebChannelBase.State.CLOSED;
-  this.lastStatusCode_ = -1;
+  this.nonAckedMapsAtChannelClose_ = [];
   if (this.handler_) {
     const pendingMessages =
         this.forwardChannelRequestPool_.getPendingMessages();
@@ -2402,13 +2464,13 @@ WebChannelBase.prototype.onClose_ = function() {
     if (pendingMessages.length == 0 && this.outgoingMaps_.length == 0) {
       this.handler_.channelClosed(this);
     } else {
-      const self = this;
-      this.channelDebug_.debug(function() {
-        'use strict';
-        return 'Number of undelivered maps' +
-            ', pending: ' + pendingMessages.length +
-            ', outgoing: ' + self.outgoingMaps_.length;
-      });
+      this.channelDebug_.debug(
+          () => 'Number of undelivered maps' +
+              ', pending: ' + pendingMessages.length +
+              ', outgoing: ' + this.outgoingMaps_.length);
+
+      goog.array.extend(this.nonAckedMapsAtChannelClose_, pendingMessages);
+      goog.array.extend(this.nonAckedMapsAtChannelClose_, this.outgoingMaps_);
 
       this.forwardChannelRequestPool_.clearPendingMessages();
 
@@ -2418,6 +2480,30 @@ WebChannelBase.prototype.onClose_ = function() {
       this.handler_.channelClosed(this, pendingMessages, copyOfUndeliveredMaps);
     }
   }
+};
+
+/**
+ * @return {!Array<!Wire.QueuedMap>} Returns the list of non-acked maps, both
+ * during an active channel or after the channel is closed. Refer to the
+ * `getNonAckedMessages()` API for definitions of non-acked messages.
+ */
+WebChannelBase.prototype.getNonAckedMaps = function() {
+  if (this.state_ == WebChannelBase.State.CLOSED) {
+    goog.asserts.assert(
+        this.nonAckedMapsAtChannelClose_ != null,
+        'nonAckedMapsAtChannelClose_ is not set after channel close.');
+    return this.nonAckedMapsAtChannelClose_;
+  }
+
+  // The underlying message objects are not cloned and thus exposes a mutability
+  // risk, but is chosen to make strict equality (i.e. ===) checks possible for
+  // callers.
+  let unAckedMaps = [];
+  goog.array.extend(
+      unAckedMaps, this.forwardChannelRequestPool_.getPendingMessages());
+  goog.array.extend(unAckedMaps, this.outgoingMaps_);
+
+  return unAckedMaps;
 };
 
 
@@ -2481,13 +2567,6 @@ WebChannelBase.prototype.createDataUri = function(
     uri = goog.Uri.create(locationPage.protocol, null, hostName, port, path);
   }
 
-  if (this.extraParams_) {
-    goog.object.forEach(this.extraParams_, function(value, key) {
-      'use strict';
-      uri.setParameterValue(key, value);
-    });
-  }
-
   const param = this.getHttpSessionIdParam();
   const value = this.getHttpSessionId();
   if (param && value) {
@@ -2497,7 +2576,6 @@ WebChannelBase.prototype.createDataUri = function(
   // Add the protocol version to the URI.
   uri.setParameterValue('VER', this.channelVersion_);
 
-  // Add the reconnect parameters.
   this.addAdditionalParams_(uri);
 
   return uri;
@@ -2600,7 +2678,7 @@ WebChannelBase.Handler.prototype.channelOpened = function(channel) {};
  * New input is available for the application to process.
  *
  * @param {WebChannelBase} channel The channel.
- * @param {Array<?>} array The data array.
+ * @param {!Array<?>|!Object} array The data array.
  */
 WebChannelBase.Handler.prototype.channelHandleArray = function(
     channel, array) {};

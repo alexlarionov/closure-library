@@ -19,6 +19,7 @@ goog.require('goog.dom');
 goog.require('goog.dom.TagName');
 goog.require('goog.dom.ViewportSizeMonitor');
 goog.require('goog.dom.classlist');
+goog.require('goog.dom.safe');
 goog.require('goog.editor.style');
 goog.require('goog.events.EventHandler');
 goog.require('goog.events.EventTarget');
@@ -32,6 +33,7 @@ goog.require('goog.positioning.Corner');
 goog.require('goog.positioning.Overflow');
 goog.require('goog.positioning.OverflowStatus');
 goog.require('goog.string');
+goog.require('goog.string.Const');
 goog.require('goog.style');
 goog.require('goog.ui.Component');
 goog.require('goog.ui.PopupBase');
@@ -108,8 +110,9 @@ goog.ui.editor.Bubble = function(parent, zIndex) {
    */
   this.closeBox_ = this.dom_.createDom(goog.dom.TagName.DIV, {
     'className': goog.getCssName('tr_bubble_closebox'),
-    'innerHTML': '&nbsp;'
   });
+  goog.dom.safe.setInnerHtmlFromConstant(
+      this.closeBox_, goog.string.Const.from('&nbsp;'));
   this.bubbleContents_.appendChild(this.closeBox_);
 
   // We make bubbles unselectable so that clicking on them does not steal focus
@@ -272,6 +275,7 @@ goog.ui.editor.Bubble.prototype.addPanel = function(
   for (let i = 0, len = this.bubbleContents_.childNodes.length - 1; i < len;
        i++) {
     const otherChild = this.bubbleContents_.childNodes[i];
+    /** @suppress {strictMissingProperties} Added to tighten compiler checks */
     const otherPanel = this.panels_[otherChild.id];
     if (otherPanel.type > type) {
       nextElement = otherChild;

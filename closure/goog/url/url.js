@@ -382,8 +382,9 @@ const createAnchorElementInIE = function(urlStr) {
   if (!aTag.hostname) {
     throw new Error(`${urlStr} is not a valid URL.`);
   }
+  const href = aTag.href;
   const urlLike = {
-    href: aTag.href,
+    href,
     protocol: aTag.protocol,
     username: '',
     password: '',
@@ -392,6 +393,7 @@ const createAnchorElementInIE = function(urlStr) {
     pathname: '/' + aTag.pathname,
     search: aTag.search,
     hash: aTag.hash,
+    toString: () => href,
   };
   // Canonicalize the port out from the URL if it matches
   const canonicalPort = canonicalPortForProtocols.get(aTag.protocol);
@@ -611,6 +613,7 @@ const canonicalPortForProtocols = new Map([
  * Closure Compiler to code-strip the polyfill if searchParams are never used.
  * @param {!UrlLike|!URL} url The URL object to derive SearchParams for.
  * @return {!ReadonlySearchParams} The URLSearchParams-like object for the URL.
+ * @suppress {strictMissingProperties} url.searchParams on union
  */
 const getSearchParams = function(url) {
   if (goog.FEATURESET_YEAR >= 2020 ||

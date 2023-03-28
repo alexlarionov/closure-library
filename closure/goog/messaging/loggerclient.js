@@ -86,9 +86,10 @@ goog.messaging.LoggerClient.prototype.sendLog_ = function(logRecord) {
   var originalException = logRecord.getException();
 
   var exception;
-  if (originalException) {
+  if (originalException !== undefined) {
     var normalizedException =
         goog.debug.normalizeErrorObject(originalException);
+    /** @suppress {strictMissingProperties} Added to tighten compiler checks */
     exception = {
       'name': normalizedException.name,
       'message': normalizedException.message,

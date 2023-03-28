@@ -27,6 +27,7 @@ goog.provide('goog.dom.DomHelper');
 
 goog.require('goog.array');
 goog.require('goog.asserts');
+goog.require('goog.asserts.dom');
 goog.require('goog.dom.BrowserFeature');
 goog.require('goog.dom.NodeType');
 goog.require('goog.dom.TagName');
@@ -114,6 +115,23 @@ goog.dom.getElement = function(element) {
 
 
 /**
+ * Gets an HTML element from the current document by element id.
+ *
+ * @param {string} id
+ * @return {?HTMLElement} The element with the given ID or null if no such
+ *     element exists.
+ */
+goog.dom.getHTMLElement = function(id) {
+  'use strict'
+  const element = goog.dom.getElement(id);
+  if (!element) {
+    return null;
+  }
+  return goog.asserts.dom.assertIsHtmlElement(element);
+};
+
+
+/**
  * Gets an element by id from the given document (if present).
  * If an element is given, it is returned.
  * @param {!Document} doc
@@ -143,6 +161,22 @@ goog.dom.getRequiredElement = function(id) {
 
 
 /**
+ * Gets an HTML element by id, asserting that the element is found.
+ *
+ * This is used when an element is expected to exist, and should fail with
+ * an assertion error if it does not (if assertions are enabled).
+ *
+ * @param {string} id Element ID.
+ * @return {!HTMLElement} The element with the given ID, if it exists.
+ */
+goog.dom.getRequiredHTMLElement = function(id) {
+  'use strict'
+  return goog.asserts.dom.assertIsHtmlElement(
+      goog.dom.getRequiredElementHelper_(document, id));
+};
+
+
+/**
  * Helper function for getRequiredElementHelper functions, both static and
  * on DomHelper.  Asserts the element with the given id exists.
  * @param {!Document} doc
@@ -155,9 +189,7 @@ goog.dom.getRequiredElementHelper_ = function(doc, id) {
   // To prevent users passing in Elements as is permitted in getElement().
   goog.asserts.assertString(id);
   var element = goog.dom.getElementHelper_(doc, id);
-  element =
-      goog.asserts.assertElement(element, 'No element found with id: ' + id);
-  return element;
+  return goog.asserts.assert(element, 'No element found with id: ' + id);
 };
 
 
@@ -284,6 +316,24 @@ goog.dom.getElementByClass = function(className, opt_el) {
 
 
 /**
+ * Returns the first element with the provided className and asserts that it is
+ * an HTML element.
+ *
+ * @param {string} className the name of the class to look for.
+ * @param {!Element|!Document=} opt_parent Optional element to look in.
+ * @return {?HTMLElement} The first item with the class name provided.
+ */
+goog.dom.getHTMLElementByClass = function(className, opt_parent) {
+  'use strict'
+  const element = goog.dom.getElementByClass(className, opt_parent);
+  if (!element) {
+    return null;
+  }
+  return goog.asserts.dom.assertIsHtmlElement(element);
+};
+
+
+/**
  * Ensures an element with the given className exists, and then returns the
  * first element with the provided className.
  *
@@ -298,6 +348,25 @@ goog.dom.getRequiredElementByClass = function(className, opt_root) {
   var retValue = goog.dom.getElementByClass(className, opt_root);
   return goog.asserts.assert(
       retValue, 'No element found with className: ' + className);
+};
+
+
+/**
+ * Ensures an element with the given className exists, and then returns the
+ * first element with the provided className after asserting that it is an
+ * HTML element.
+ *
+ * @param {string} className the name of the class to look for.
+ * @param {!Element|!Document=} opt_parent Optional element or document to look
+ *     in.
+ * @return {!HTMLElement} The first item with the class name provided.
+ */
+goog.dom.getRequiredHTMLElementByClass = function(className, opt_parent) {
+  'use strict'
+  const retValue = goog.dom.getElementByClass(className, opt_parent);
+  goog.asserts.assert(
+      retValue, 'No HTMLElement found with className: ' + className);
+  return goog.asserts.dom.assertIsHtmlElement(retValue);
 };
 
 
@@ -730,8 +799,7 @@ goog.dom.getDocumentScroll_ = function(doc) {
   'use strict';
   var el = goog.dom.getDocumentScrollElement_(doc);
   var win = goog.dom.getWindow_(doc);
-  if (goog.userAgent.IE && goog.userAgent.isVersionOrHigher('10') &&
-      win.pageYOffset != el.scrollTop) {
+  if (goog.userAgent.IE && win.pageYOffset != el.scrollTop) {
     // The keyboard on IE10 touch devices shifts the page using the pageYOffset
     // without modifying scrollTop. For this case, we want the body scroll
     // offsets.
@@ -846,34 +914,6 @@ goog.dom.createDom_ = function(doc, args) {
   'use strict';
   var tagName = String(args[0]);
   var attributes = args[1];
-
-  // Internet Explorer is dumb:
-  // name: https://msdn.microsoft.com/en-us/library/ms534184(v=vs.85).aspx
-  // type: https://msdn.microsoft.com/en-us/library/ms534700(v=vs.85).aspx
-  // Also does not allow setting of 'type' attribute on 'input' or 'button'.
-  if (!goog.dom.BrowserFeature.CAN_ADD_NAME_OR_TYPE_ATTRIBUTES && attributes &&
-      (attributes.name || attributes.type)) {
-    var tagNameArr = ['<', tagName];
-    if (attributes.name) {
-      tagNameArr.push(' name="', goog.string.htmlEscape(attributes.name), '"');
-    }
-    if (attributes.type) {
-      tagNameArr.push(' type="', goog.string.htmlEscape(attributes.type), '"');
-
-      // Clone attributes map to remove 'type' without mutating the input.
-      var clone = {};
-      goog.object.extend(clone, attributes);
-
-      // JSCompiler can't see how goog.object.extend added this property,
-      // because it was essentially added by reflection.
-      // So it needs to be quoted.
-      delete clone['type'];
-
-      attributes = clone;
-    }
-    tagNameArr.push('>');
-    tagName = tagNameArr.join('');
-  }
 
   var element = goog.dom.createElement_(doc, tagName);
 
@@ -1400,13 +1440,11 @@ goog.dom.getChildren = function(element) {
   'use strict';
   // We check if the children attribute is supported for child elements
   // since IE8 misuses the attribute by also including comments.
-  if (goog.dom.BrowserFeature.CAN_USE_CHILDREN_ATTRIBUTE &&
-      element.children != undefined) {
+  if (element.children != undefined) {
     return element.children;
   }
   // Fall back to manually filtering the element's child nodes.
   return Array.prototype.filter.call(element.childNodes, function(node) {
-    'use strict';
     return node.nodeType == goog.dom.NodeType.ELEMENT;
   });
 };
@@ -1579,16 +1617,9 @@ goog.dom.getParentElement = function(element) {
   'use strict';
   var parent;
   if (goog.dom.BrowserFeature.CAN_USE_PARENT_ELEMENT_PROPERTY) {
-    var isIe9 = goog.userAgent.IE && goog.userAgent.isVersionOrHigher('9') &&
-        !goog.userAgent.isVersionOrHigher('10');
-    // SVG elements in IE9 can't use the parentElement property.
-    // goog.global['SVGElement'] is not defined in IE9 quirks mode.
-    if (!(isIe9 && goog.global['SVGElement'] &&
-          element instanceof goog.global['SVGElement'])) {
-      parent = element.parentElement;
-      if (parent) {
-        return parent;
-      }
+    parent = element.parentElement;
+    if (parent) {
+      return parent;
     }
   }
   parent = element.parentNode;
@@ -1829,8 +1860,9 @@ goog.dom.getOwnerDocument = function(node) {
   // TODO(nnaze): Update param signature to be non-nullable.
   goog.asserts.assert(node, 'Node cannot be null or undefined.');
   return /** @type {!Document} */ (
-      node.nodeType == goog.dom.NodeType.DOCUMENT ? node : node.ownerDocument ||
-              node.document);
+      node.nodeType == goog.dom.NodeType.DOCUMENT ?
+          node :
+          node.ownerDocument || node.document);
 };
 
 
@@ -2235,30 +2267,16 @@ goog.dom.hasNonZeroBoundingRect_ = function(element) {
 goog.dom.getTextContent = function(node) {
   'use strict';
   var textContent;
-  // Note(arv): IE9, Opera, and Safari 3 support innerText but they include
-  // text nodes in script tags. So we revert to use a user agent test here.
-  if (goog.dom.BrowserFeature.CAN_USE_INNER_TEXT && node !== null &&
-      ('innerText' in node)) {
-    textContent = goog.string.canonicalizeNewlines(node.innerText);
-    // Unfortunately .innerText() returns text with &shy; symbols
-    // We need to filter it out and then remove duplicate whitespaces
-  } else {
-    var buf = [];
-    goog.dom.getTextContent_(node, buf, true);
-    textContent = buf.join('');
-  }
+  var buf = [];
+  goog.dom.getTextContent_(node, buf, true);
+  textContent = buf.join('');
 
   // Strip &shy; entities. goog.format.insertWordBreaks inserts them in Opera.
   textContent = textContent.replace(/ \xAD /g, ' ').replace(/\xAD/g, '');
   // Strip &#8203; entities. goog.format.insertWordBreaks inserts them in IE8.
   textContent = textContent.replace(/\u200B/g, '');
 
-  // Skip this replacement on old browsers with working innerText, which
-  // automatically turns &nbsp; into ' ' and / +/ into ' ' when reading
-  // innerText.
-  if (!goog.dom.BrowserFeature.CAN_USE_INNER_TEXT) {
-    textContent = textContent.replace(/ +/g, ' ');
-  }
+  textContent = textContent.replace(/ +/g, ' ');
   if (textContent != ' ') {
     textContent = textContent.replace(/^\s*/, '');
   }
@@ -2555,8 +2573,8 @@ goog.dom.getPixelRatio = function() {
     // Should be for IE10 and FF6-17 (this basically clamps to lower)
     // Note that the order of these statements is important
     return goog.dom.matchesPixelRatio_(3) || goog.dom.matchesPixelRatio_(2) ||
-           goog.dom.matchesPixelRatio_(1.5) || goog.dom.matchesPixelRatio_(1) ||
-           .75;
+        goog.dom.matchesPixelRatio_(1.5) || goog.dom.matchesPixelRatio_(1) ||
+        .75;
   }
   return 1;
 };

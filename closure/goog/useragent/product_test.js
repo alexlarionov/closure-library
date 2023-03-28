@@ -16,13 +16,11 @@ const product = goog.require('goog.userAgent.product');
 const testAgents = goog.require('goog.labs.userAgent.testAgents');
 const testSuite = goog.require('goog.testing.testSuite');
 const userAgentTestUtil = goog.require('goog.userAgentTestUtil');
-const util = goog.require('goog.labs.userAgent.util');
 
 let mockAgent;
 let replacer;
 
 function updateUserAgentUtils() {
-  util.setUserAgent(null);
   userAgentTestUtil.reinitializeUserAgent();
 }
 
@@ -97,11 +95,6 @@ function checkEachUserAgentDetected(userAgents, browser) {
 }
 
 testSuite({
-  shouldRunTests() {
-    // This test has not yet been updated to run on IE8 and up. See b/2997681.
-    return !googUserAgent.IE || !googUserAgent.isVersionOrHigher(8);
-  },
-
   setUp() {
     mockAgent = new MockUserAgent();
     mockAgent.install();
@@ -116,18 +109,6 @@ testSuite({
 
   testInternetExplorer() {
     const userAgents = [
-      {
-        ua: 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; GTB6; ' +
-            'chromeframe; .NET CLR 1.1.4322; InfoPath.1; ' +
-            '.NET CLR 3.0.04506.30; .NET CLR 3.0.04506.648; ' +
-            '.NET CLR 3.0.4506.2152; .NET CLR 3.5.30729; .NET CLR 2.0.50727)',
-        versions: [
-          {num: 6, truth: true},
-          {num: '7.0', truth: true},
-          {num: 7.1, truth: false},
-          {num: 8, truth: false},
-        ],
-      },
       {
         ua: 'Mozilla/5.0 (Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko',
         versions: [
