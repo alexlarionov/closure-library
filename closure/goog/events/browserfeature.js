@@ -13,19 +13,6 @@ goog.module.declareLegacyNamespace();
 
 
 /**
- * Tricks Closure Compiler into believing that a function is pure.  The compiler
- * assumes that any `valueOf` function is pure, without analyzing its contents.
- *
- * @param {function(): T} fn
- * @return {T}
- * @template T
- */
-const purify = (fn) => {
-  return ({valueOf: fn}).valueOf();
-};
-
-
-/**
  * Enum of browser capabilities.
  * @enum {boolean}
  */
@@ -95,7 +82,7 @@ exports = {
    * Whether addEventListener supports {passive: true}.
    * https://developers.google.com/web/updates/2016/06/passive-event-listeners
    */
-  PASSIVE_EVENTS: purify(function() {
+  PASSIVE_EVENTS: (function() {
     // If we're in a web worker or other custom environment, we can't tell.
     if (!goog.global.addEventListener || !Object.defineProperty) {  // IE 8
       return false;
@@ -114,5 +101,5 @@ exports = {
     }
 
     return passive;
-  })
+  })()
 };

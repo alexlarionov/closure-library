@@ -123,7 +123,7 @@ goog.ui.TableSorter.prototype.enterDocument = function() {
   var table = this.getElement();
   var headerRow = table.tHead.rows[this.sortableHeaderRowIndex_];
 
-  this.getHandler().listen(headerRow, goog.events.EventType.CLICK, this.sort_);
+  this.getHandler().listen(headerRow, goog.events.EventType.CLICK, this.onSort);
 };
 
 
@@ -132,7 +132,7 @@ goog.ui.TableSorter.prototype.enterDocument = function() {
  */
 goog.ui.TableSorter.prototype.getSortColumn = function() {
   'use strict';
-  return this.header_ ? this.header_.cellIndex : -1;
+  return this.header_ ? this.getColumnForTableHeader(this.header_) : -1;
 };
 
 
@@ -193,9 +193,9 @@ goog.ui.TableSorter.prototype.setSortFunction = function(column, sortFunction) {
 /**
  * Sort the table contents by the values in the given column.
  * @param {goog.events.BrowserEvent} e The click event.
- * @private
+ * @protected
  */
-goog.ui.TableSorter.prototype.sort_ = function(e) {
+goog.ui.TableSorter.prototype.onSort = function(e) {
   'use strict';
   // Determine what column was clicked.
   // TODO(robbyw): If this table cell contains another table, this could break.
@@ -208,7 +208,7 @@ goog.ui.TableSorter.prototype.sort_ = function(e) {
 
   // Perform the sort.
   if (this.dispatchEvent(goog.ui.TableSorter.EventType.BEFORESORT)) {
-    if (this.sort(th.cellIndex, reverse)) {
+    if (this.sort(this.getColumnForTableHeader(th), reverse)) {
       this.dispatchEvent(goog.ui.TableSorter.EventType.SORT);
     }
   }
@@ -274,8 +274,7 @@ goog.ui.TableSorter.prototype.sort = function(column, opt_reverse) {
   });
 
   // Mark this as the last sorted column.
-  this.header_ = /** @type {!HTMLTableCellElement} */
-      (table.tHead.rows[this.sortableHeaderRowIndex_].cells[column]);
+  this.header_ = this.getTableHeaderForColumn(column);
 
   // Update the header class.
   goog.dom.classlist.add(
@@ -284,6 +283,25 @@ goog.ui.TableSorter.prototype.sort = function(column, opt_reverse) {
           goog.getCssName('goog-tablesorter-sorted'));
 
   return true;
+};
+
+
+/**
+ * @param {Node} th The table header cell used by the column.
+ * @return {number} The column index.
+ * @protected
+ */
+goog.ui.TableSorter.prototype.getColumnForTableHeader = function(th) {
+  return th.cellIndex;
+};
+
+/**
+ * @param {number} column The column index.
+ * @return {!HTMLTableCellElement} The table header cell used by the column.
+ * @protected
+ */
+goog.ui.TableSorter.prototype.getTableHeaderForColumn = function(column) {
+  return /** @type {!HTMLTableCellElement} */(this.getElement().tHead.rows[this.sortableHeaderRowIndex_].cells[column]);
 };
 
 

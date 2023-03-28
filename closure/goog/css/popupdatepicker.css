@@ -17,3 +17,6 @@
   position: absolute;
 }
 
+.goog-popupdatepicker {
+    position: absolute !important;
+}

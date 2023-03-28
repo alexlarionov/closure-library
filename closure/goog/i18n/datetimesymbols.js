@@ -3665,8 +3665,6 @@ goog.i18n.DateTimeSymbols;
 /**
  * Selected date/time formatting symbols by locale.
  */
-goog.i18n.DateTimeSymbols = goog.i18n.DateTimeSymbols_en;
-
 switch (goog.LOCALE) {
   case 'en_ISO':
   case 'en-ISO':
@@ -4029,4 +4027,6 @@ switch (goog.LOCALE) {
   case 'zu':
     goog.i18n.DateTimeSymbols = goog.i18n.DateTimeSymbols_zu;
     break;
+  default:
+    goog.i18n.DateTimeSymbols = goog.i18n.DateTimeSymbols_en;
 }

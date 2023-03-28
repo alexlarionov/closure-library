@@ -649,7 +649,7 @@ goog.ui.Textarea.prototype.grow_ = function(opt_e) {
   var shouldCallShrink = false;
   this.isResizing_ = true;
   var oldHeight = this.height_;
-  if (textarea.scrollHeight) {
+  if (textarea.scrollHeight != null) {
     var setMinHeight = false;
     var setMaxHeight = false;
     var newHeight = this.getHeight_();
@@ -703,7 +703,7 @@ goog.ui.Textarea.prototype.shrink_ = function() {
   if (!this.isResizing_) {
     this.isResizing_ = true;
     var scrollHeight = textarea.scrollHeight;
-    if (!scrollHeight) {
+    if (scrollHeight == null) {
       this.setHeightToEstimate_();
     } else {
       var currentHeight = this.getHeight_();

@@ -393,7 +393,7 @@ goog.ui.DrilldownRow.decorate = function(selfObj) {
       goog.dom.TagName.DIV, {'style': 'float: left; width: ' + depth + 'em;'},
       dom.createDom(
           goog.dom.TagName.DIV,
-          {'class': 'toggle', 'style': 'width: 1em; float: right;'},
+          {'class': goog.getCssName('toggle'), 'style': 'width: 1em; float: right;'},
           // NOTE: NBSP is probably only needed by IE6. This div can probably be
           // made contentless.
           goog.string.Unicode.NBSP));

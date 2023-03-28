@@ -10,7 +10,6 @@
  * See https://doi.org/10.1145%2F63039.63042 for details.
  */
 
-goog.setTestOnly('goog.testing.PseudoRandom');
 goog.provide('goog.testing.PseudoRandom');
 
 goog.require('goog.Disposable');
